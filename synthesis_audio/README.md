@@ -963,6 +963,13 @@ python_version = "3.11"
 }
 ```
 
+### Create a .env file for AWS credentials
+* Create a `.env` file and add the following:
+```
+AWS_APPLICATION_CREDENTIALS="secrets/megapipeline-serviceaccount_accessKeys.csv"
+```
+
+
 ### Create Dockerfile
 * Create a `Dockerfile` and base it from `python:3.11-slim-buster` the official Debian-hosted Python 3.11 image
 * Set the following environment variables:
@@ -1000,10 +1007,12 @@ pip install pipenv
 
 * You should be able to run your docker image by using:
 ```
-docker run --rm -ti -v "$(pwd)":/app synthesis_audio
+docker run --rm -ti -v "$(pwd)":/app --env-file .env synthesis_audio
 ```
 
 * The `-v "(pwd)":/app` option mounts your current working directory into the `/app` directory inside the container as a volume. This helps us during app development, so when you change a source code file using VSCode from your host machine, the files are automatically changed inside the container.
+
+* The `--env-file .env` option is to pass the environment variables to the container from the `.env` file
 
 ### Python packages required
 * `pipenv install` the following:
