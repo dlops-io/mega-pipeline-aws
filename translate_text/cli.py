@@ -6,16 +6,18 @@ import argparse
 import shutil
 import boto3
 import csv
+from googletrans import Translator
+
+# Generate the inputs arguments parser
+parser = argparse.ArgumentParser(description="Command description.")
 
 bucket_name = 'megapipeline-s3bucket'
 text_paragraphs = "text_paragraphs"
-text_audios = "text_audios"
+text_translated = "text_translated"
 group_name = "group-01" # This needs to be your Group name e.g: group-01, group-02, group-03, group-04, group-05, ...
 
-def makedirs():
-    os.makedirs(os.path.join(text_paragraphs, group_name), exist_ok=True)
-    os.makedirs(os.path.join(text_audios, group_name), exist_ok=True)
-    
+translator = Translator()
+
 # Path to your CSV file
 csv_file_path = os.getenv('AWS_APPLICATION_CREDENTIALS')
 
@@ -28,14 +30,11 @@ with open(csv_file_path, mode='r',  encoding='utf-8-sig') as file:
 access_key = credentials['Access key ID']
 secret_key = credentials['Secret access key']
 
-# Create a Polly client
-#polly_client = boto3.client('polly', region_name='us-east-1')
-polly_client = boto3.client(
-    'polly',
-    aws_access_key_id=access_key,
-    aws_secret_access_key=secret_key,
-    region_name='us-east-1'
-)
+
+def makedirs():
+    os.makedirs(os.path.join(text_paragraphs, group_name), exist_ok=True)
+    os.makedirs(os.path.join(text_translated, group_name), exist_ok=True)
+
 
 def download():
     print("download")
@@ -43,7 +42,7 @@ def download():
     # Clear
     shutil.rmtree(text_paragraphs, ignore_errors=True, onerror=None)
     makedirs()
-    
+
     # Create a boto3 session
     session = boto3.Session(
         aws_access_key_id=access_key,
@@ -67,12 +66,9 @@ def download():
         print(f"No files found matching pattern {prefix}input-*.txt")
 
 
-def synthesis():
-    print("synthesis")
+def translate():
+    print("translate")
     makedirs()
-
-    language_code = "en-US" # AWS Polly language code
-    voice_id = "Joanna" # AWS Polly voice
 
     # Get the list of text files matching input-*.txt pattern in the group folder
     group_text_dir = os.path.join(text_paragraphs, group_name)
@@ -84,26 +80,20 @@ def synthesis():
     for text_file in text_files:
         uuid = os.path.basename(text_file).replace(".txt", "")
         file_path = os.path.join(text_paragraphs, group_name, text_file)
-        audio_file = os.path.join(text_audios, group_name, uuid + ".mp3")
+        translated_file = os.path.join(text_translated, group_name, uuid + ".txt")
 
-        if os.path.exists(audio_file):
+        if os.path.exists(translated_file):
             continue
 
         with open(file_path) as f:
             input_text = f.read()
 
-        # Call the Polly API to synthesize speech
-        response = polly_client.synthesize_speech(
-            Text=input_text,
-            OutputFormat="mp3", 
-            VoiceId=voice_id,
-            LanguageCode=language_code
-        )
+        results = translator.translate(input_text, src="en", dest="fr")
+        print(results.text)
 
-        # Save the audio file
-        with open(audio_file, "wb") as out:
-            # Write the response to the output file.
-            out.write(response["AudioStream"].read())
+        # Save the translation
+        with open(translated_file, "w") as f:
+            f.write(results.text)
 
 
 def upload():
@@ -117,31 +107,30 @@ def upload():
     )
     s3_client = session.client('s3')
 
-    # Get the list of audio files matching input-*.mp3 pattern in the group folder
-    group_audio_dir = os.path.join(text_audios, group_name)
-    if os.path.exists(group_audio_dir):
-        audio_files = [f for f in os.listdir(group_audio_dir) if f.startswith("input-") and f.endswith(".mp3")]
+    # Get the list of text files matching input-*.txt pattern in the group folder
+    group_translated_dir = os.path.join(text_translated, group_name)
+    if os.path.exists(group_translated_dir):
+        text_files = [f for f in os.listdir(group_translated_dir) if f.startswith("input-") and f.endswith(".txt")]
     else:
-        audio_files = []
+        text_files = []
+    print(text_files)
 
-    for audio_file in audio_files:
-        file_path = os.path.join(text_audios, group_name, audio_file)
-        object_name = f'{text_audios}/{group_name}/{audio_file}'
-        
+    for text_file in text_files:
+        file_path = os.path.join(text_translated, group_name, text_file)
+        object_name = f'{text_translated}/{group_name}/{text_file}'
+
         # Upload the file
         s3_client.upload_file(file_path, bucket_name, object_name)
-        print(f"File {file_path} uploaded to {bucket_name}/{object_name}")
+        print(f"Uploading: {object_name} from {file_path}")
 
-# Generate the inputs arguments parser
-parser = argparse.ArgumentParser(description="Command description.")
 
 def main(args=None):
     print("Args:", args)
 
     if args.download:
         download()
-    if args.synthesis:
-        synthesis()
+    if args.translate:
+        translate()
     if args.upload:
         upload()
 
@@ -149,21 +138,22 @@ def main(args=None):
 if __name__ == "__main__":
     # Generate the inputs arguments parser
     # if you type into the terminal 'python cli.py --help', it will provide the description
-    parser = argparse.ArgumentParser(description="Synthesis audio from text")
+    parser = argparse.ArgumentParser(description="Translate English to French")
 
     parser.add_argument(
         "-d",
         "--download",
         action="store_true",
-        help="Download paragraph of text from AWS",
+        help="Download text paragraphs from S3 bucket",
     )
 
-    parser.add_argument(
-        "-s", "--synthesis", action="store_true", help="Synthesis audio"
-    )
+    parser.add_argument("-t", "--translate", action="store_true", help="Translate text")
 
     parser.add_argument(
-        "-u", "--upload", action="store_true", help="Upload audio file to AWS"
+        "-u",
+        "--upload",
+        action="store_true",
+        help="Upload translated text to S3 bucket",
     )
 
     args = parser.parse_args()

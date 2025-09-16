@@ -1,18 +1,18 @@
-# Generate Text
+# Translate Text
 
-📝 &rightarrow; 🗒️ 
+🗒️ &rightarrow; 🇫🇷
 
-In this container you will implement the following:
-* Read the text prompt from the S3 bucket and folder `text_prompts`
-* Use OpenAI API to generate text (About 100 words), (You will need your own Open AI API key - https://platform.openai.com/docs/quickstart - Create an API Key in the Dashboard)
-* Save the paragraph of text as a text file in S3 bucket and folder `text_paragraphs` (use the same file name)
+In this container, you will implement the following:
+* Read the text from the S3 bucket and folder `text_paragraphs`
+* Use `googletrans` to translate the text from English to French (or any other language)
+* Save the translated text as a text file in S3 bucket and folder `text_translated` (use the same file name)
 
 ### Project Setup
 
-* Create a folder `generate_text` or clone this repo
+* Create a folder `translate_text` or clone this repo
 
 ### AWS Credentials File
-* Create a CSV file with your AWS credentials and save it inside a folder called `secrets` inside `generate_text`
+* Create a CSV file with your AWS credentials and save it inside a folder called `secrets` inside `translate_text`
 * The CSV file should contain:
 ```
 Access key ID,Secret access key
@@ -21,7 +21,7 @@ AKIA...,your-secret-key-here
 * Set the environment variable `AWS_APPLICATION_CREDENTIALS` to point to this file
 
 ### Create pyproject.toml
-* Inside the `generate_text` folder create:
+* Inside the `translate_text` folder create:
 * Add `pyproject.toml` with the following contents:
 ```
 [project]
@@ -35,7 +35,7 @@ dependencies = [
 ```
 
 ### Create Dockerfile
-* Inside the `generate_text` folder
+* Inside the `translate_text` folder
 * Create a `Dockerfile` and base it from `python:3.12-slim-bookworm` the official Debian-hosted Python 3.12 image
 * Set the following environment variables:
 ```
@@ -70,11 +70,11 @@ RUN pip install --no-cache-dir --upgrade pip && \
 * Example dockerfile can be found in the main [README](../README.md#sample-dockerfile)
 
 ### Docker Build & Run
-* Build your docker image and give your image the name `generate_text`
+* Build your docker image and give your image the name `translate_text`
 
 * You should be able to run your docker image by using:
 ```
-docker run --rm -ti -v "$(pwd)":/app generate_text
+docker run --rm -ti -v "$(pwd)":/app translate_text
 ```
 
 * The `-v "(pwd)":/app` option mounts your current working directory into the `/app` directory inside the container as a volume. This helps us during app development, so when you change a source code file using VSCode from your host machine, the files are automatically changed inside the container.
@@ -82,37 +82,38 @@ docker run --rm -ti -v "$(pwd)":/app generate_text
 ### Python packages required
 * `uv add` the following:
   - `boto3`
-  - `openai`
-  - `transformers`
+  - `googletrans==4.0.0rc1`
+
+Note: This implementation uses the googletrans library, which provides free translation functionality through Google's translation service without requiring additional API keys.
 
 * If you exit your container at this point, in order to get the latest environment from the pyproject.toml file, make sure to re-build your docker image again
 
 ### CLI to interact with your code
-* Use the given python file [`cli.py`](cli.py)
+* Use the given Python file [`cli.py`](cli.py)
+* Assign your group-number to the `group_name` variable in `cli.py`
 * Update the bucket name to your S3 bucket name
-* Add your OpenAI API key to the environment or configuration
 * The CLI should have the following command line argument options
 ```
 python cli.py --help
-usage: cli.py [-h] [-d] [-g] [-u]
+usage: cli.py [-h] [-d] [-t] [-u]
 
-Generate text from prompt
+Translate English to French
 
 optional arguments:
-  -h, --help      show this help message and exit
-  -d, --download  Download text prompts from S3 bucket
-  -g, --generate  Generate a text paragraph
-  -u, --upload    Upload paragraph text to S3 bucket
+  -h, --help       show this help message and exit
+  -d, --download   Download text paragraphs from S3 bucket
+  -t, --translate  Translate text
+  -u, --upload     Upload translated text to S3 bucket
 ```
 
 ### Testing your code locally
-* Inside your docker shell make sure you run the following commands:
-* `python cli.py -d` - Should download all the required data from S3 bucket
-* `python cli.py -g` - Should generate text using GPT2 or OpenAI API and save it locally
-* `python cli.py -u` - Should upload the generated text to the remote S3 bucket
+* Inside your docker shell, make sure you run the following commands:
+* `python cli.py -d` - Should download all the required data from the S3 bucket
+* `python cli.py -t` - Should translate text from English to French and save it locally
+* `python cli.py -u` - Should upload the French text to the remote S3 bucket
 
 ### OPTIONAL: Push Container to Docker Hub
 * Sign up in Docker Hub and create an [Access Token](https://hub.docker.com/settings/security)
 * Login to the Hub: `docker login -u <USER NAME> -p <ACCESS TOKEN>`
-* Tag the Docker Image: `docker tag generate_text <USER NAME>/generate_text`
-* Push to Docker Hub: `docker push <USER NAME>/generate_text`
+* Tag the Docker Image: `docker tag translate_text <USER NAME>/translate_text`
+* Push to Docker Hub: `docker push <USER NAME>/translate_text`

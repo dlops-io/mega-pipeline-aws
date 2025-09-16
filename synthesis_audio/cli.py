@@ -13,8 +13,9 @@ parser = argparse.ArgumentParser(description="Command description.")
 
 
 bucket_name = 'megapipeline-s3bucket'
-output_audios = "output_audios_pp"
+output_audios = "output_audios"
 text_translated = "text_translated"
+group_name = "group-01" # This needs to be your Group name e.g: group-01, group-02, group-03, group-04, group-05, ...
 
 
 # Path to your CSV file
@@ -48,8 +49,8 @@ with open(secrets_file_path) as f:
 XI_API_KEY = os.environ['XI_API_KEY']  
 
 def makedirs():
-    os.makedirs(output_audios, exist_ok=True)
-    os.makedirs(text_translated, exist_ok=True)
+    os.makedirs(os.path.join(text_translated, group_name), exist_ok=True)
+    os.makedirs(os.path.join(output_audios, group_name), exist_ok=True)
 
 
 def download():
@@ -66,15 +67,20 @@ def download():
     )
     s3_client = session.client('s3')
 
-    # List objects in the bucket with the specified prefix
-    response = s3_client.list_objects_v2(Bucket=bucket_name, Prefix=text_translated + "/")
+    # List files matching the pattern text_translated/{group_name}/input-*.txt
+    prefix = f"{text_translated}/{group_name}/"
+    response = s3_client.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
 
-    for obj in response.get('Contents', []):
-        print(obj['Key'])
-        if obj['Key'].endswith(".txt"):
-            local_file_name = os.path.join(text_translated, os.path.basename(obj['Key']))
-            print("local_file_name:", local_file_name)
-            s3_client.download_file(bucket_name, obj['Key'], local_file_name)
+    if 'Contents' in response:
+        for obj in response['Contents']:
+            if obj['Key'].endswith('.txt') and 'input-' in obj['Key']:
+                # Create local directory structure
+                local_file_path = obj['Key']
+                os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
+                s3_client.download_file(bucket_name, obj['Key'], local_file_path)
+                print(f"File {obj['Key']} downloaded to {local_file_path}")
+    else:
+        print(f"No files found matching pattern {prefix}input-*.txt")
 
     
 
@@ -82,16 +88,20 @@ def synthesis():
     print("synthesis")
     makedirs()
 
-    language_code = "es-ES" #"fr-FR"
+    language_code = "fr-FR" # French language for translated text
 
-    # Get the list of text file
-    text_files = os.listdir(text_translated)
+    # Get the list of text files matching input-*.txt pattern in the group folder
+    group_text_dir = os.path.join(text_translated, group_name)
+    if os.path.exists(group_text_dir):
+        text_files = [f for f in os.listdir(group_text_dir) if f.startswith("input-") and f.endswith(".txt")]
+    else:
+        text_files = []
 
     for text_file in text_files:
-        uuid = text_file.replace(".txt", "")
+        uuid = os.path.basename(text_file).replace(".txt", "")
         print("uuid:", uuid)
-        file_path = os.path.join(text_translated, text_file)
-        audio_file = os.path.join(output_audios, uuid + ".mp3")
+        file_path = os.path.join(text_translated, group_name, text_file)
+        audio_file = os.path.join(output_audios, group_name, uuid + ".mp3")
     
         if os.path.exists(audio_file):
             continue
@@ -139,7 +149,6 @@ def synthesis():
             print(response.text)
 
 def upload():
-    ## reads from output_audios_pp folder and uploads to s3 bucket output_audios folder
     print("upload")
     makedirs()
 
@@ -150,20 +159,23 @@ def upload():
     )
     s3_client = session.client('s3')
 
-    # Get the list of files
-    audio_files = os.listdir(output_audios)
+    # Get the list of audio files matching input-*.mp3 pattern in the group folder
+    group_audio_dir = os.path.join(output_audios, group_name)
+    if os.path.exists(group_audio_dir):
+        audio_files = [f for f in os.listdir(group_audio_dir) if f.startswith("input-") and f.endswith(".mp3")]
+    else:
+        audio_files = []
 
     for audio_file in audio_files:
-        file_path = os.path.join(output_audios, audio_file)
-
-        # The key is the path in the S3 bucket where the file will be stored
-        s3_key = os.path.join("output_audios", audio_file)
+        file_path = os.path.join(output_audios, group_name, audio_file)
+        s3_key = f"{output_audios}/{group_name}/{audio_file}"
 
         print("s3_key:", s3_key)
         print("file_path:", file_path)
 
         # Upload the file
         s3_client.upload_file(file_path, bucket_name, s3_key)
+        print(f"File {file_path} uploaded to {bucket_name}/{s3_key}")
 
     print("Upload completed.")
     
@@ -189,7 +201,7 @@ if __name__ == "__main__":
         "-d",
         "--download",
         action="store_true",
-        help="Download translated text from GCS bucket",
+        help="Download translated text from S3 bucket",
     )
 
     parser.add_argument(
@@ -197,10 +209,9 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "-u", "--upload", action="store_true", help="Upload audio file to GCS bucket"
+        "-u", "--upload", action="store_true", help="Upload audio file to S3 bucket"
     )
 
     args = parser.parse_args()
 
     main(args)
-

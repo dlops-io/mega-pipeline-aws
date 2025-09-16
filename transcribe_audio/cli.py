@@ -16,10 +16,11 @@ from pydub import AudioSegment
 bucket_name = 'megapipeline-s3bucket'
 input_audios = "input_audios"
 text_prompts = "text_prompts"
+group_name = "group-01" # This needs to be your Group name e.g: group-01, group-02, group-03, group-04, group-05, ...
 
 def makedirs():
     os.makedirs(input_audios, exist_ok=True)
-    os.makedirs(text_prompts, exist_ok=True)
+    os.makedirs(os.path.join(text_prompts, group_name), exist_ok=True)
 
 # Path to your CSV file
 csv_file_path = os.getenv('AWS_APPLICATION_CREDENTIALS')
@@ -81,7 +82,8 @@ def transcribe():
     for audio_path in audio_files:
         uuid = audio_path.replace(".mp3", "")
         audio_path = os.path.join(input_audios, audio_path)
-        text_file = os.path.join(text_prompts, uuid + ".txt")
+        # Use input- prefix to match expected pattern
+        text_file = os.path.join(text_prompts, group_name, "input-" + uuid + ".txt")
 
         if os.path.exists(text_file):
             continue
@@ -101,10 +103,7 @@ def transcribe():
         text = r.recognize_google(audio)
         print(text)
 
-        uuid = audio_path.replace(".mp3", "").split("/")[-1]
-        # audio_path = os.path.join(input_audios, audio_path.split("/")[-1])
-        text_file = os.path.join(text_prompts, uuid + ".txt")
-        # Save the transcription
+        # Save the transcription with input- prefix for pipeline consistency
         with open(text_file, "w") as f:
             f.write(text)
 
@@ -113,7 +112,11 @@ def upload():
     makedirs()
 
     # Get the list of text file
-    text_files = os.listdir(text_prompts)
+    group_text_dir = os.path.join(text_prompts, group_name)
+    if os.path.exists(group_text_dir):
+        text_files = [f for f in os.listdir(group_text_dir) if f.startswith("input-") and f.endswith(".txt")]
+    else:
+        text_files = []
     print(text_files)
 
     # Create a boto3 session
@@ -123,10 +126,9 @@ def upload():
     )
     s3_client = session.client('s3')
 
-    folder_name = text_prompts
     for text_file in text_files:
-        file_path = os.path.join(text_prompts, text_file)
-        object_name = f'{folder_name}/{text_file}'  # The name of the file in the bucket, including the folder
+        file_path = os.path.join(text_prompts, group_name, text_file)
+        object_name = f'{text_prompts}/{group_name}/{text_file}'
 
         # Upload the file
         s3_client.upload_file(file_path, bucket_name, object_name)
@@ -154,7 +156,7 @@ if __name__ == "__main__":
         "-d",
         "--download",
         action="store_true",
-        help="Download audio files from GCS bucket",
+        help="Download audio files from S3 bucket",
     )
 
     parser.add_argument(
@@ -165,7 +167,7 @@ if __name__ == "__main__":
         "-u",
         "--upload",
         action="store_true",
-        help="Upload transcribed text to GCS bucket",
+        help="Upload transcribed text to S3 bucket",
     )
 
     args = parser.parse_args()
